@@ -1,3 +1,4 @@
+using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -13,10 +14,12 @@ namespace pr3withDB.Controllers.Api;
 public class CartItemsApiController : ControllerBase
 {
     private readonly ShopDbContext _context;
+    private readonly IMapper _mapper;
 
-    public CartItemsApiController(ShopDbContext context)
+    public CartItemsApiController(ShopDbContext context, IMapper mapper)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
+        _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
     }
 
     /// <summary>
@@ -37,7 +40,7 @@ public class CartItemsApiController : ControllerBase
             .Take(pageSize)
             .ToListAsync();
 
-        var result = cartItems.Select(CartItemMapper.ToDto).ToList();
+        var result = _mapper.Map<IEnumerable<CartItemDTO>>(cartItems);
         return Ok(result);
     }
 
@@ -58,7 +61,7 @@ public class CartItemsApiController : ControllerBase
             return NotFound(new { message = $"Позиция корзины с ID {id} не найдена." });
         }
 
-        return Ok(CartItemMapper.ToDto(cartItem));
+        return Ok(_mapper.Map<CartItemDTO>(cartItem));
     }
 
     /// <summary>
@@ -91,11 +94,11 @@ public class CartItemsApiController : ControllerBase
             return BadRequest(ModelState);
         }
 
-        var cartItem = CartItemMapper.ToEntity(dto);
+        var cartItem = _mapper.Map<CartItem>(dto);
         _context.CartItems.Add(cartItem);
         await _context.SaveChangesAsync();
 
-        var createdDto = CartItemMapper.ToDto(cartItem);
+        var createdDto = _mapper.Map<CartItemDTO>(cartItem);
         return CreatedAtAction(nameof(GetById), new { id = cartItem.IdCartItems }, createdDto);
     }
 
@@ -136,7 +139,7 @@ public class CartItemsApiController : ControllerBase
             return BadRequest(ModelState);
         }
 
-        CartItemMapper.ApplyUpdate(cartItem, dto);
+        _mapper.Map(dto, cartItem);
         await _context.SaveChangesAsync();
 
         return NoContent();
@@ -182,7 +185,7 @@ public class CartItemsApiController : ControllerBase
             }
         }
 
-        CartItemMapper.ApplyPatch(cartItem, dto);
+        _mapper.Map(dto, cartItem);
         await _context.SaveChangesAsync();
 
         return NoContent();

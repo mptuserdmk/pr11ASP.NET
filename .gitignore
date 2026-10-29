@@ -32,3 +32,9 @@ secrets.json
 
 # Local History for Visual Studio Code
 .history/
+
+# Node / Frontend ignores
+node_modules/
+dist/
+.vite/
+*.local

@@ -191,6 +191,9 @@ public partial class ShopDbContext : DbContext
                 .HasColumnName("user_login");
             entity.Property(e => e.UserPasswordHash)
                 .HasColumnName("user_password_hash");
+            entity.Property(e => e.IsActive)
+                .HasColumnName("is_active")
+                .HasDefaultValue(true);
 
             entity.HasOne(d => d.Role).WithMany(p => p.Users)
                 .HasForeignKey(d => d.RoleId)

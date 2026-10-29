@@ -50,6 +50,47 @@ namespace pr3withDB.Mapping
             // Role mappings
             CreateMap<Role, RoleReadDto>()
                 .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.IdRoles));
+
+            // Cart mappings
+            CreateMap<Cart, CartDTO>()
+                .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.IdCarts))
+                .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(src => src.CartCreatedAt));
+            CreateMap<CreateCartDTO, Cart>()
+                .ForMember(dest => dest.CartCreatedAt, opt => opt.MapFrom(_ => DateTime.UtcNow));
+            CreateMap<UpdateCartDTO, Cart>();
+            CreateMap<PatchCartDTO, Cart>()
+                .ForMember(dest => dest.UserId, opt =>
+                {
+                    opt.Condition(src => src.UserId.HasValue);
+                    opt.MapFrom(src => src.UserId!.Value);
+                });
+
+            // CartItem mappings
+            CreateMap<CartItem, CartItemDTO>()
+                .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.IdCartItems));
+            CreateMap<CreateCartItemDTO, CartItem>();
+            CreateMap<UpdateCartItemDTO, CartItem>();
+            CreateMap<PatchCartItemDTO, CartItem>()
+                .ForMember(dest => dest.CartId, opt =>
+                {
+                    opt.Condition(src => src.CartId.HasValue);
+                    opt.MapFrom(src => src.CartId);
+                })
+                .ForMember(dest => dest.UserId, opt =>
+                {
+                    opt.Condition(src => src.UserId != null);
+                    opt.MapFrom(src => src.UserId);
+                })
+                .ForMember(dest => dest.ProductId, opt =>
+                {
+                    opt.Condition(src => src.ProductId.HasValue);
+                    opt.MapFrom(src => src.ProductId!.Value);
+                })
+                .ForMember(dest => dest.CartItemQuantity, opt =>
+                {
+                    opt.Condition(src => src.CartItemQuantity.HasValue);
+                    opt.MapFrom(src => src.CartItemQuantity!.Value);
+                });
         }
     }
 }

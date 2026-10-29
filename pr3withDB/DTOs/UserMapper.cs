@@ -17,6 +17,7 @@ public static class UserMapper
             Id = entity.IdUsers,
             UserLogin = entity.UserLogin,
             RoleId = entity.RoleId,
+            IsActive = entity.IsActive,
             CreatedAt = entity.UserCreatedAt
         };
     }
@@ -30,6 +31,7 @@ public static class UserMapper
             UserLogin = dto.UserLogin,
             UserPasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
             RoleId = dto.RoleId,
+            IsActive = dto.IsActive,
             UserCreatedAt = DateTime.UtcNow
         };
     }
@@ -42,6 +44,7 @@ public static class UserMapper
         entity.UserLogin = dto.UserLogin;
         entity.UserPasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
         entity.RoleId = dto.RoleId;
+        entity.IsActive = dto.IsActive;
     }
 
     public static void ApplyPatch(User entity, PatchUserDTO dto)
@@ -49,19 +52,16 @@ public static class UserMapper
         if (entity == null) throw new ArgumentNullException(nameof(entity));
         if (dto == null) throw new ArgumentNullException(nameof(dto));
 
-        if (dto.UserLogin != null)
-        {
+        if (!string.IsNullOrWhiteSpace(dto.UserLogin))
             entity.UserLogin = dto.UserLogin;
-        }
 
-        if (!string.IsNullOrEmpty(dto.Password))
-        {
+        if (!string.IsNullOrWhiteSpace(dto.Password))
             entity.UserPasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
-        }
 
         if (dto.RoleId.HasValue)
-        {
             entity.RoleId = dto.RoleId.Value;
-        }
+
+        if (dto.IsActive.HasValue)
+            entity.IsActive = dto.IsActive.Value;
     }
 }

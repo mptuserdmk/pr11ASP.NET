@@ -6,6 +6,8 @@ namespace pr3withDB.Common
         NotFound,
         Validation,
         Conflict,
+        Unauthorized,
+        Forbidden,
         Internal
     }
 
@@ -35,6 +37,20 @@ namespace pr3withDB.Common
             IsSuccess = false,
             ErrorMessage = message,
             ErrorType = ServiceErrorType.NotFound
+        };
+
+        public static ServiceResult<T> Unauthorized(string message = "Неверные учетные данные") => new()
+        {
+            IsSuccess = false,
+            ErrorMessage = message,
+            ErrorType = ServiceErrorType.Unauthorized
+        };
+
+        public static ServiceResult<T> Forbidden(string message = "Доступ запрещен") => new()
+        {
+            IsSuccess = false,
+            ErrorMessage = message,
+            ErrorType = ServiceErrorType.Forbidden
         };
     }
 }

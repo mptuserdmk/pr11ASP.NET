@@ -1,4 +1,12 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Claims;
+using System.Threading.Tasks;
+using AutoMapper;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using pr3withDB.DTOs;
@@ -9,43 +17,64 @@ namespace pr3withDB.Controllers.Api;
 [ApiController]
 [Route("api/carts")]
 [Produces("application/json")]
-[AllowAnonymous]
+[Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme, Policy = "RequireActiveUser")]
 public class CartsApiController : ControllerBase
 {
     private readonly ShopDbContext _context;
+    private readonly IMapper _mapper;
+    private readonly IAuthorizationService _authorizationService;
 
-    public CartsApiController(ShopDbContext context)
+    public CartsApiController(
+        ShopDbContext context, 
+        IMapper mapper,
+        IAuthorizationService authorizationService)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
+        _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+        _authorizationService = authorizationService ?? throw new ArgumentNullException(nameof(authorizationService));
     }
 
     /// <summary>
     /// Получение списка корзин с пагинацией и сортировкой по Id.
+    /// Обычный пользователь видит только свою корзину, Администратор — все.
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(IEnumerable<CartDTO>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<IEnumerable<CartDTO>>> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
         if (page < 1) page = 1;
         if (pageSize < 1) pageSize = 10;
         if (pageSize > 100) pageSize = 100;
 
-        var carts = await _context.Carts
-            .AsNoTracking()
+        var query = _context.Carts.AsNoTracking();
+
+        if (!User.IsInRole("Admin"))
+        {
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+            if (int.TryParse(userIdStr, out var currentUserId))
+            {
+                query = query.Where(c => c.UserId == currentUserId);
+            }
+        }
+
+        var carts = await query
             .OrderBy(c => c.IdCarts)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
 
-        var result = carts.Select(CartMapper.ToDto).ToList();
+        var result = _mapper.Map<IEnumerable<CartDTO>>(carts);
         return Ok(result);
     }
 
     /// <summary>
-    /// Получение корзины по идентификатору.
+    /// Получение корзины по идентификатору с Resource-based проверкой владельца.
     /// </summary>
     [HttpGet("{id:int}")]
     [ProducesResponseType(typeof(CartDTO), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CartDTO>> GetById(int id)
     {
@@ -58,7 +87,13 @@ public class CartsApiController : ControllerBase
             return NotFound(new { message = $"Корзина с ID {id} не найдена." });
         }
 
-        return Ok(CartMapper.ToDto(cart));
+        var authResult = await _authorizationService.AuthorizeAsync(User, cart, "OwnerOrAdminPolicy");
+        if (!authResult.Succeeded)
+        {
+            return Forbid();
+        }
+
+        return Ok(_mapper.Map<CartDTO>(cart));
     }
 
     /// <summary>
@@ -67,11 +102,21 @@ public class CartsApiController : ControllerBase
     [HttpPost]
     [ProducesResponseType(typeof(CartDTO), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<CartDTO>> Create([FromBody] CreateCartDTO dto)
     {
         if (!ModelState.IsValid)
         {
             return BadRequest(ModelState);
+        }
+
+        if (!User.IsInRole("Admin"))
+        {
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+            if (int.TryParse(userIdStr, out var currentUserId))
+            {
+                dto.UserId = currentUserId;
+            }
         }
 
         var userExists = await _context.Users.AnyAsync(u => u.IdUsers == dto.UserId);
@@ -88,11 +133,11 @@ public class CartsApiController : ControllerBase
             return BadRequest(ModelState);
         }
 
-        var cart = CartMapper.ToEntity(dto);
+        var cart = _mapper.Map<Cart>(dto);
         _context.Carts.Add(cart);
         await _context.SaveChangesAsync();
 
-        var createdDto = CartMapper.ToDto(cart);
+        var createdDto = _mapper.Map<CartDTO>(cart);
         return CreatedAtAction(nameof(GetById), new { id = cart.IdCarts }, createdDto);
     }
 
@@ -102,6 +147,8 @@ public class CartsApiController : ControllerBase
     [HttpPut("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateCartDTO dto)
     {
@@ -116,21 +163,13 @@ public class CartsApiController : ControllerBase
             return NotFound(new { message = $"Корзина с ID {id} не найдена." });
         }
 
-        var userExists = await _context.Users.AnyAsync(u => u.IdUsers == dto.UserId);
-        if (!userExists)
+        var authResult = await _authorizationService.AuthorizeAsync(User, cart, "OwnerOrAdminPolicy");
+        if (!authResult.Succeeded)
         {
-            ModelState.AddModelError(nameof(dto.UserId), $"Пользователь с ID {dto.UserId} не существует.");
-            return BadRequest(ModelState);
+            return Forbid();
         }
 
-        var userHasOtherCart = await _context.Carts.AnyAsync(c => c.UserId == dto.UserId && c.IdCarts != id);
-        if (userHasOtherCart)
-        {
-            ModelState.AddModelError(nameof(dto.UserId), $"У пользователя с ID {dto.UserId} уже есть другая корзина.");
-            return BadRequest(ModelState);
-        }
-
-        CartMapper.ApplyUpdate(cart, dto);
+        _mapper.Map(dto, cart);
         await _context.SaveChangesAsync();
 
         return NoContent();
@@ -142,6 +181,8 @@ public class CartsApiController : ControllerBase
     [HttpPatch("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Patch(int id, [FromBody] PatchCartDTO dto)
     {
@@ -156,24 +197,13 @@ public class CartsApiController : ControllerBase
             return NotFound(new { message = $"Корзина с ID {id} не найдена." });
         }
 
-        if (dto.UserId.HasValue)
+        var authResult = await _authorizationService.AuthorizeAsync(User, cart, "OwnerOrAdminPolicy");
+        if (!authResult.Succeeded)
         {
-            var userExists = await _context.Users.AnyAsync(u => u.IdUsers == dto.UserId.Value);
-            if (!userExists)
-            {
-                ModelState.AddModelError(nameof(dto.UserId), $"Пользователь с ID {dto.UserId.Value} не существует.");
-                return BadRequest(ModelState);
-            }
-
-            var userHasOtherCart = await _context.Carts.AnyAsync(c => c.UserId == dto.UserId.Value && c.IdCarts != id);
-            if (userHasOtherCart)
-            {
-                ModelState.AddModelError(nameof(dto.UserId), $"У пользователя с ID {dto.UserId.Value} уже есть другая корзина.");
-                return BadRequest(ModelState);
-            }
+            return Forbid();
         }
 
-        CartMapper.ApplyPatch(cart, dto);
+        _mapper.Map(dto, cart);
         await _context.SaveChangesAsync();
 
         return NoContent();
@@ -184,7 +214,8 @@ public class CartsApiController : ControllerBase
     /// </summary>
     [HttpDelete("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(int id)
     {
@@ -194,15 +225,14 @@ public class CartsApiController : ControllerBase
             return NotFound(new { message = $"Корзина с ID {id} не найдена." });
         }
 
-        try
+        var authResult = await _authorizationService.AuthorizeAsync(User, cart, "OwnerOrAdminPolicy");
+        if (!authResult.Succeeded)
         {
-            _context.Carts.Remove(cart);
-            await _context.SaveChangesAsync();
+            return Forbid();
         }
-        catch (DbUpdateException)
-        {
-            return BadRequest(new { message = "Невозможно удалить корзину, так как в ней содержатся товары." });
-        }
+
+        _context.Carts.Remove(cart);
+        await _context.SaveChangesAsync();
 
         return NoContent();
     }

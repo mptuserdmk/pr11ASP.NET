@@ -15,6 +15,8 @@ public partial class User
 
     public int RoleId { get; set; }
 
+    public bool IsActive { get; set; } = true;
+
     public DateTime UserCreatedAt { get; set; }
 
     public virtual Role? Role { get; set; }
@@ -28,4 +30,3 @@ public partial class User
     [ValidateNever]
     public virtual ICollection<Order> Orders { get; set; } = new List<Order>();
 }
-

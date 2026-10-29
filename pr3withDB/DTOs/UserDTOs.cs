@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel.DataAnnotations;
 
 namespace pr3withDB.DTOs;
@@ -11,6 +12,7 @@ public class UserReadDto
     public string Login { get; set; } = null!;
     public int RoleId { get; set; }
     public string? RoleName { get; set; }
+    public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; }
 }
 
@@ -22,6 +24,7 @@ public class UserDTO
     public int Id { get; set; }
     public string UserLogin { get; set; } = null!;
     public int RoleId { get; set; }
+    public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; }
 }
 
@@ -41,6 +44,8 @@ public class CreateUserDTO
 
     [Range(1, int.MaxValue, ErrorMessage = "Укажите корректный идентификатор роли.")]
     public int RoleId { get; set; }
+
+    public bool IsActive { get; set; } = true;
 }
 
 /// <summary>
@@ -59,6 +64,8 @@ public class UpdateUserDTO
 
     [Range(1, int.MaxValue, ErrorMessage = "Укажите корректный идентификатор роли.")]
     public int RoleId { get; set; }
+
+    public bool IsActive { get; set; } = true;
 }
 
 /// <summary>
@@ -75,6 +82,8 @@ public class PatchUserDTO
 
     [Range(1, int.MaxValue, ErrorMessage = "Укажите корректный идентификатор роли.")]
     public int? RoleId { get; set; }
+
+    public bool? IsActive { get; set; }
 }
 
 public class UserCreateDto : CreateUserDTO { }

@@ -1,4 +1,11 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Claims;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using pr3withDB.DTOs;
@@ -9,7 +16,7 @@ namespace pr3withDB.Controllers.Api;
 [ApiController]
 [Route("api/users")]
 [Produces("application/json")]
-[AllowAnonymous]
+[Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme, Policy = "RequireActiveUser")]
 public class UsersApiController : ControllerBase
 {
     private readonly ShopDbContext _context;
@@ -20,10 +27,13 @@ public class UsersApiController : ControllerBase
     }
 
     /// <summary>
-    /// Получение списка пользователей с пагинацией и сортировкой по Id.
+    /// Получение списка пользователей с пагинацией (Role-based policy: только Администратор).
     /// </summary>
     [HttpGet]
+    [Authorize(Policy = "RequireAdminRole")]
     [ProducesResponseType(typeof(IEnumerable<UserDTO>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<IEnumerable<UserDTO>>> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
         if (page < 1) page = 1;
@@ -43,12 +53,23 @@ public class UsersApiController : ControllerBase
 
     /// <summary>
     /// Получение пользователя по идентификатору.
+    /// Доступно администратору или самому пользователю.
     /// </summary>
     [HttpGet("{id:int}")]
     [ProducesResponseType(typeof(UserDTO), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<UserDTO>> GetById(int id)
     {
+        var currentUserIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        var isSelf = int.TryParse(currentUserIdStr, out var currentUserId) && currentUserId == id;
+
+        if (!User.IsInRole("Admin") && !isSelf)
+        {
+            return Forbid();
+        }
+
         var user = await _context.Users
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.IdUsers == id);
@@ -62,11 +83,14 @@ public class UsersApiController : ControllerBase
     }
 
     /// <summary>
-    /// Создание нового пользователя.
+    /// Создание нового пользователя через API администратора.
     /// </summary>
     [HttpPost]
+    [Authorize(Policy = "RequireAdminRole")]
     [ProducesResponseType(typeof(UserDTO), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<UserDTO>> Create([FromBody] CreateUserDTO dto)
     {
         if (!ModelState.IsValid)
@@ -98,16 +122,27 @@ public class UsersApiController : ControllerBase
 
     /// <summary>
     /// Полное обновление пользователя (PUT).
+    /// Доступно администратору или самому пользователю.
     /// </summary>
     [HttpPut("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateUserDTO dto)
     {
         if (!ModelState.IsValid)
         {
             return BadRequest(ModelState);
+        }
+
+        var currentUserIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        var isSelf = int.TryParse(currentUserIdStr, out var currentUserId) && currentUserId == id;
+
+        if (!User.IsInRole("Admin") && !isSelf)
+        {
+            return Forbid();
         }
 
         var user = await _context.Users.FindAsync(id);
@@ -138,16 +173,27 @@ public class UsersApiController : ControllerBase
 
     /// <summary>
     /// Частичное обновление пользователя (PATCH).
+    /// Доступно администратору или самому пользователю.
     /// </summary>
     [HttpPatch("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Patch(int id, [FromBody] PatchUserDTO dto)
     {
         if (!ModelState.IsValid)
         {
             return BadRequest(ModelState);
+        }
+
+        var currentUserIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        var isSelf = int.TryParse(currentUserIdStr, out var currentUserId) && currentUserId == id;
+
+        if (!User.IsInRole("Admin") && !isSelf)
+        {
+            return Forbid();
         }
 
         var user = await _context.Users.FindAsync(id);
@@ -183,11 +229,14 @@ public class UsersApiController : ControllerBase
     }
 
     /// <summary>
-    /// Удаление пользователя по идентификатору.
+    /// Удаление пользователя (Role-based policy: только Администратор).
     /// </summary>
     [HttpDelete("{id:int}")]
+    [Authorize(Policy = "RequireAdminRole")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(int id)
     {
