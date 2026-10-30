@@ -6,7 +6,7 @@ using pr3withDB.Models;
 
 namespace pr3withDB.Controllers
 {
-    [Authorize]
+    [Authorize(AuthenticationSchemes = "Cookies")]
     public class OrdersController : Controller
     {
         private readonly ShopDbContext _context;

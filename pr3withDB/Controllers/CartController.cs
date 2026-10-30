@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace pr3withDB.Controllers
 {
-    [Authorize]
+    [Authorize(AuthenticationSchemes = "Cookies")]
     public class CartController : Controller
     {
         private readonly ShopDbContext _context;
