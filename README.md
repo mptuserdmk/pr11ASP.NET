@@ -15,7 +15,7 @@
 * **Ограничение запросов (Rate Limiting):** `Microsoft.AspNetCore.RateLimiting` (.NET 8 built-in)
 * **Маппинг DTO:** `AutoMapper` 16.2.0 (`MappingProfile`)
 * **Документация API:** Swagger / OpenAPI (`Swashbuckle.AspNetCore` 10.2.3) с фильтром `AuthorizeCheckOperationFilter`
-* **Тестирование:** xUnit 2.9, `Microsoft.AspNetCore.Mvc.Testing` 8.0 (22 теста)
+* **Тестирование:** xUnit 2.9, `Microsoft.AspNetCore.Mvc.Testing` 8.0, `Microsoft.EntityFrameworkCore.InMemory` 8.0 (32 теста)
 * **Клиентский фронтенд:** React 18, TypeScript, Vite 5 (Origin: `http://localhost:5173`)
 
 ---
@@ -89,7 +89,7 @@
 * **Журнал ответов API**: Отображение времени, метода, URL, статуса (цветные бейджи 200/401/403/429), заголовков и JSON ответа.
 
 ### 8. Модульные и интеграционные тесты (`pr3withDB.Tests`)
-Всего в проекте **22 автоматизированных теста** (100% пройдены):
+Всего в проекте **32 автоматизированных теста** (100% пройдены):
 * `ApiEndpointIntegrationTests` (6 интеграционных тестов через `WebApplicationFactory` и `HttpClient`):
   * `GetProtectedMe_WithoutToken_Returns401Unauthorized_NotRedirect302`
   * `PostLogin_InvalidCredentials_Returns401Unauthorized`
@@ -97,13 +97,24 @@
   * `PostLogin_RateLimiter_Returns429TooManyRequests_OnBurst`
   * `CorsPreflight_FromAllowedOrigin_ReturnsCorsHeaders`
   * `GetPublicProducts_Returns200AndExposedXTotalCountHeader`
-* `AuthAndPolicyTests` (6 тестов авторизации и безопасности):
+* `AuthAndPolicyTests` (9 тестов авторизации, безопасности и хеширования паролей):
   * `PasswordHasher_HashesAndVerifiesPasswordCorrectly`
   * `JwtTokenService_GeneratesTokenWithRequiredClaims`
   * `OrderAuthorizationHandler_AllowsAdmin_ForAnyOrder`
   * `OrderAuthorizationHandler_AllowsOwner_ForOwnOrder`
   * `OrderAuthorizationHandler_DeniesNonOwner_ForOtherOrder`
   * `OrderAuthorizationHandler_DeniesDeactivatedUser`
+  * `PasswordService_HashAndVerify_PasswordHasher_Works`
+  * `PasswordService_Verify_LegacyBCrypt_WorksAndFlagsNeedsRehash`
+  * `PasswordService_Verify_CorruptedHash_ReturnsFalseWithoutThrowing`
+* `AccountLoginTests` (7 интеграционных тестов входа через EF Core InMemory):
+  * `AccountController_Login_WithPasswordHasherHash_SucceedsWithoutBcryptCrash`
+  * `AccountController_Login_WithLegacyBcryptHash_SucceedsAndAutoRehashesToPasswordHasher`
+  * `AccountController_Login_WithWrongPassword_ReturnsViewWithErrorAndNo500`
+  * `AccountController_Register_CreatesUserWithPasswordService_AndCanLogin`
+  * `AuthService_Login_WithLegacyBcryptHash_SucceedsAndAutoRehashes`
+  * `AuthService_Login_WithPasswordHasherHash_Succeeds`
+  * `AuthService_Login_WithWrongPassword_ReturnsUnauthorized`
 * `MappingProfileTests` (10 тестов маппинга AutoMapper).
 
 ---
@@ -135,3 +146,25 @@ npm run dev
 ```powershell
 dotnet test pr11ASP.NET.sln
 ```
+
+---
+
+## 🐛 Исправления и доработки (Bugfix)
+
+### Исправление краша BCrypt при входе
+**Проблема:** При попытке войти через MVC-форму или JWT API возникала ошибка `BCrypt.Net.SaltParseException` / `FormatException`, поскольку `PasswordHasher<User>.VerifyHashedPassword()` не умеет обрабатывать устаревшие хеши BCrypt (начинающиеся с `$2a$`).
+
+**Решение:** Реализован сервис `PasswordService` (`pr3withDB/Services/PasswordService.cs`) с интерфейсом `IPasswordService`:
+- Если хеш начинается с `$2` — проверяет через `BCrypt.Net.BCrypt.Verify()` и устанавливает флаг `needsRehash = true`
+- Если хеш в формате `PasswordHasher<User>` — проверяет через штатный `IPasswordHasher<User>`
+- При любом повреждённом хеше — возвращает `false` без исключений
+- При успешном входе со старым BCrypt-хешем **автоматически перехеширует** пароль в современный формат `PasswordHasher<User>` и сохраняет в БД
+
+**Файлы изменены:**
+- `pr3withDB/Services/IPasswordService.cs` *(новый)*
+- `pr3withDB/Services/PasswordService.cs` *(новый)*
+- `pr3withDB/Services/AuthService.cs`
+- `pr3withDB/Controllers/AccountController.cs`
+- `pr3withDB/Areas/Admin/Controllers/UsersController.cs`
+- `pr3withDB/DTOs/UserMapper.cs`
+- `pr3withDB/Program.cs` — регистрация `IPasswordService` в DI
