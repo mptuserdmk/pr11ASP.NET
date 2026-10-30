@@ -62,6 +62,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 
 // PasswordHasher<User>
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
+builder.Services.AddScoped<IPasswordService, PasswordService>();
 
 // Resource-Based Authorization Handlers
 builder.Services.AddSingleton<IAuthorizationHandler, OrderAuthorizationHandler>();

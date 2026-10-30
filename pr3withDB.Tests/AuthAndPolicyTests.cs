@@ -31,6 +31,66 @@ namespace pr3withDB.Tests
         }
 
         [Fact]
+        public void PasswordService_HashAndVerify_PasswordHasher_Works()
+        {
+            var hasher = new PasswordHasher<User>();
+            var service = new PasswordService(hasher);
+            var user = new User { IdUsers = 2, UserLogin = "newuser" };
+
+            var hash = service.HashPassword(user, "StrongPass999!");
+            user.UserPasswordHash = hash;
+
+            // Проверяем правильный пароль
+            var isCorrect = service.VerifyPassword(user, "StrongPass999!", out var needsRehash);
+            Assert.True(isCorrect);
+            Assert.False(needsRehash); // Уже в формате PasswordHasher, rehash не нужен
+
+            // Проверяем неверный пароль
+            var isWrong = service.VerifyPassword(user, "InvalidPass", out _);
+            Assert.False(isWrong);
+        }
+
+        [Fact]
+        public void PasswordService_Verify_LegacyBCrypt_WorksAndFlagsNeedsRehash()
+        {
+            var hasher = new PasswordHasher<User>();
+            var service = new PasswordService(hasher);
+
+            // Имитируем существующего пользователя со старым хешем BCrypt
+            var user = new User
+            {
+                IdUsers = 3,
+                UserLogin = "legacy_user",
+                UserPasswordHash = BCrypt.Net.BCrypt.HashPassword("OldBcryptPassword123")
+            };
+
+            // Проверяем правильный пароль: должен успешно верифицироваться и установить флаг needsRehash = true
+            var isCorrect = service.VerifyPassword(user, "OldBcryptPassword123", out var needsRehash);
+            Assert.True(isCorrect);
+            Assert.True(needsRehash);
+
+            // Проверяем неверный пароль к хешу BCrypt: должен вернуть false
+            var isWrong = service.VerifyPassword(user, "WrongPassword", out _);
+            Assert.False(isWrong);
+        }
+
+        [Fact]
+        public void PasswordService_Verify_CorruptedHash_ReturnsFalseWithoutThrowing()
+        {
+            var hasher = new PasswordHasher<User>();
+            var service = new PasswordService(hasher);
+
+            // Проверяем различные некорректные строки, которые раньше приводили к сбою BCrypt/Base64
+            var user1 = new User { IdUsers = 4, UserLogin = "u1", UserPasswordHash = "$2a$invalid_salt_and_hash" };
+            var user2 = new User { IdUsers = 5, UserLogin = "u2", UserPasswordHash = "NotBase64!!$#@!" };
+            var user3 = new User { IdUsers = 6, UserLogin = "u3", UserPasswordHash = "" };
+
+            Assert.False(service.VerifyPassword(user1, "anyPass", out _));
+            Assert.False(service.VerifyPassword(user2, "anyPass", out _));
+            Assert.False(service.VerifyPassword(user3, "anyPass", out _));
+        }
+
+        [Fact]
         public void JwtTokenService_GeneratesTokenWithRequiredClaims()
         {
             var configData = new Dictionary<string, string?>
@@ -150,4 +210,3 @@ namespace pr3withDB.Tests
         }
     }
 }
-

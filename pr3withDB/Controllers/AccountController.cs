@@ -2,20 +2,25 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System;
+using System.Collections.Generic;
 using System.Security.Claims;
+using System.Threading.Tasks;
 using pr3withDB.Models;
 using pr3withDB.Models.ViewModels;
-using BCrypt.Net;
+using pr3withDB.Services;
 
 namespace pr3withDB.Controllers
 {
     public class AccountController : Controller
     {
         private readonly ShopDbContext _context;
+        private readonly IPasswordService _passwordService;
 
-        public AccountController(ShopDbContext context)
+        public AccountController(ShopDbContext context, IPasswordService passwordService)
         {
-            _context = context;
+            _context = context ?? throw new ArgumentNullException(nameof(context));
+            _passwordService = passwordService ?? throw new ArgumentNullException(nameof(passwordService));
         }
 
         [HttpGet]
@@ -39,8 +44,15 @@ namespace pr3withDB.Controllers
 
                 if (user != null)
                 {
-                    if (BCrypt.Net.BCrypt.Verify(model.Password, user.UserPasswordHash))
+                    // Безопасная проверка пароля (поддерживает и PasswordHasher, и legacy BCrypt)
+                    if (_passwordService.VerifyPassword(user, model.Password, out var needsRehash))
                     {
+                        if (needsRehash)
+                        {
+                            user.UserPasswordHash = _passwordService.HashPassword(user, model.Password);
+                            await _context.SaveChangesAsync();
+                        }
+
                         var claims = new List<Claim>
                         {
                             new Claim(ClaimTypes.NameIdentifier, user.IdUsers.ToString()),
@@ -101,10 +113,13 @@ namespace pr3withDB.Controllers
                 var user = new User
                 {
                     UserLogin = model.Login,
-                    UserPasswordHash = BCrypt.Net.BCrypt.HashPassword(model.Password),
                     RoleId = roleId,
-                    UserCreatedAt = DateTime.Now
+                    IsActive = true,
+                    UserCreatedAt = DateTime.UtcNow,
+                    UserPasswordHash = string.Empty
                 };
+
+                user.UserPasswordHash = _passwordService.HashPassword(user, model.Password);
 
                 _context.Users.Add(user);
                 await _context.SaveChangesAsync();
@@ -130,4 +145,3 @@ namespace pr3withDB.Controllers
         }
     }
 }
-

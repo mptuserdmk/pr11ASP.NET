@@ -1,6 +1,5 @@
 using System;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using pr3withDB.Common;
@@ -12,18 +11,18 @@ namespace pr3withDB.Services
     public class AuthService : IAuthService
     {
         private readonly ShopDbContext _context;
-        private readonly IPasswordHasher<User> _passwordHasher;
+        private readonly IPasswordService _passwordService;
         private readonly IJwtTokenService _jwtTokenService;
         private readonly ILogger<AuthService> _logger;
 
         public AuthService(
             ShopDbContext context,
-            IPasswordHasher<User> passwordHasher,
+            IPasswordService passwordService,
             IJwtTokenService jwtTokenService,
             ILogger<AuthService> logger)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
-            _passwordHasher = passwordHasher ?? throw new ArgumentNullException(nameof(passwordHasher));
+            _passwordService = passwordService ?? throw new ArgumentNullException(nameof(passwordService));
             _jwtTokenService = jwtTokenService ?? throw new ArgumentNullException(nameof(jwtTokenService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
@@ -58,11 +57,11 @@ namespace pr3withDB.Services
                 Role = userRole,
                 IsActive = true,
                 UserCreatedAt = DateTime.UtcNow,
-                UserPasswordHash = string.Empty // временно
+                UserPasswordHash = string.Empty
             };
 
-            // Хешируем через PasswordHasher<User>
-            newUser.UserPasswordHash = _passwordHasher.HashPassword(newUser, dto.Password);
+            // Хешируем через PasswordService (PasswordHasher<User>)
+            newUser.UserPasswordHash = _passwordService.HashPassword(newUser, dto.Password);
 
             _context.Users.Add(newUser);
             await _context.SaveChangesAsync();
@@ -106,11 +105,19 @@ namespace pr3withDB.Services
                 return ServiceResult<AuthResponseDto>.Forbidden("Учетная запись деактивирована администратором");
             }
 
-            var verificationResult = _passwordHasher.VerifyHashedPassword(user, user.UserPasswordHash, dto.Password);
-            if (verificationResult == PasswordVerificationResult.Failed)
+            // Безопасная проверка пароля (поддерживает и PasswordHasher, и legacy BCrypt)
+            if (!_passwordService.VerifyPassword(user, dto.Password, out var needsRehash))
             {
                 _logger.LogWarning("Неудачная попытка входа: неверный пароль для пользователя {Login}", trimmedLogin);
                 return ServiceResult<AuthResponseDto>.Unauthorized("Неверный логин или пароль");
+            }
+
+            // Если был старый хеш BCrypt, автоматически обновляем его до PasswordHasher<User>
+            if (needsRehash)
+            {
+                user.UserPasswordHash = _passwordService.HashPassword(user, dto.Password);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("Пароль пользователя {Login} успешно перехеширован на PasswordHasher<User>", user.UserLogin);
             }
 
             // При успехе генерируем токен
@@ -130,4 +137,3 @@ namespace pr3withDB.Services
         }
     }
 }
-

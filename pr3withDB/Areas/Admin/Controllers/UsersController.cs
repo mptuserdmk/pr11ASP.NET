@@ -1,8 +1,11 @@
+using System;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 using pr3withDB.Models;
+using pr3withDB.Services;
 
 namespace pr3withDB.Areas.Admin.Controllers
 {
@@ -11,8 +14,13 @@ namespace pr3withDB.Areas.Admin.Controllers
     public class UsersController : Controller
     {
         private readonly ShopDbContext _context;
+        private readonly IPasswordService _passwordService;
 
-        public UsersController(ShopDbContext context) => _context = context;
+        public UsersController(ShopDbContext context, IPasswordService passwordService)
+        {
+            _context = context ?? throw new ArgumentNullException(nameof(context));
+            _passwordService = passwordService ?? throw new ArgumentNullException(nameof(passwordService));
+        }
 
         // Список
         public async Task<IActionResult> Index()
@@ -34,9 +42,10 @@ namespace pr3withDB.Areas.Admin.Controllers
         {
             if (ModelState.IsValid)
             {
-                // Хеширование пароля
-                user.UserPasswordHash = BCrypt.Net.BCrypt.HashPassword(user.Password);
-                user.UserCreatedAt = DateTime.Now;
+                // Хеширование пароля через PasswordService
+                user.UserPasswordHash = _passwordService.HashPassword(user, user.Password ?? string.Empty);
+                user.UserCreatedAt = DateTime.UtcNow;
+                user.IsActive = true;
 
                 _context.Add(user);
                 await _context.SaveChangesAsync();
@@ -72,7 +81,7 @@ namespace pr3withDB.Areas.Admin.Controllers
 
                 if (!string.IsNullOrEmpty(user.Password))
                 {
-                    user.UserPasswordHash = BCrypt.Net.BCrypt.HashPassword(user.Password);
+                    user.UserPasswordHash = _passwordService.HashPassword(user, user.Password);
                 }
                 else
                 {

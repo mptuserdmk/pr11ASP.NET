@@ -1,4 +1,5 @@
-using BCrypt.Net;
+using System;
+using Microsoft.AspNetCore.Identity;
 using pr3withDB.Models;
 
 namespace pr3withDB.DTOs;
@@ -8,6 +9,8 @@ namespace pr3withDB.DTOs;
 /// </summary>
 public static class UserMapper
 {
+    private static readonly PasswordHasher<User> _hasher = new();
+
     public static UserDTO ToDto(User entity)
     {
         if (entity == null) throw new ArgumentNullException(nameof(entity));
@@ -26,14 +29,17 @@ public static class UserMapper
     {
         if (dto == null) throw new ArgumentNullException(nameof(dto));
 
-        return new User
+        var user = new User
         {
             UserLogin = dto.UserLogin,
-            UserPasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
             RoleId = dto.RoleId,
             IsActive = dto.IsActive,
-            UserCreatedAt = DateTime.UtcNow
+            UserCreatedAt = DateTime.UtcNow,
+            UserPasswordHash = string.Empty
         };
+
+        user.UserPasswordHash = _hasher.HashPassword(user, dto.Password);
+        return user;
     }
 
     public static void ApplyUpdate(User entity, UpdateUserDTO dto)
@@ -42,7 +48,7 @@ public static class UserMapper
         if (dto == null) throw new ArgumentNullException(nameof(dto));
 
         entity.UserLogin = dto.UserLogin;
-        entity.UserPasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
+        entity.UserPasswordHash = _hasher.HashPassword(entity, dto.Password);
         entity.RoleId = dto.RoleId;
         entity.IsActive = dto.IsActive;
     }
@@ -56,7 +62,7 @@ public static class UserMapper
             entity.UserLogin = dto.UserLogin;
 
         if (!string.IsNullOrWhiteSpace(dto.Password))
-            entity.UserPasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
+            entity.UserPasswordHash = _hasher.HashPassword(entity, dto.Password);
 
         if (dto.RoleId.HasValue)
             entity.RoleId = dto.RoleId.Value;
